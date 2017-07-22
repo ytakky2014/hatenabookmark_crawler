@@ -4,21 +4,58 @@ import (
 	"github.com/mmcdole/gofeed"
 	"fmt"
 	"strconv"
+	"os"
+	"github.com/jinzhu/gorm"
+	_ "github.com/jinzhu/gorm/dialects/mysql"
+	"time"
 
+	"log"
+	"github.com/joho/godotenv"
 )
 
+type bookmark struct {
+	gorm.Model
+	Id    int `gorm:"primary_key"`
+	Title string
+	Datetime string
+	Link string
+}
+
+type tag struct {
+	gorm.Model
+	Tag_Id int `gorm:"primary_key"`
+	Bookmark_Id int
+	Tag string
+
+}
 // rss1ページ辺りの件数は固定
 const perPage = 20
-// timeformat
 
 func main() {
 	//rss feed
 	rssurl := "http://b.hatena.ne.jp/ytacky/rss"
 	// indexは1から開始
 	index := 1
-	id := 0
 	fp := gofeed.NewParser()
+	err := godotenv.Load()
+	DB_HOST := os.Getenv("DB_HOST")
+	DB_CHARSET := os.Getenv("DB_CHARSET")
+	DB_USER := os.Getenv("DB_USER")
+	DB_PASS := os.Getenv("DB_PASS")
+	DB_NAME := os.Getenv("DB_NAME")
+	DB_PORT := os.Getenv("DB_PORT")
+	DB_CONNECT := DB_USER + ":" + DB_PASS + "@tcp(" + DB_HOST + ":" + DB_PORT + ")/" + DB_NAME +"?charset=" + DB_CHARSET + "&parseTime=true&loc=Asia%2FTokyo"
+	db, err := gorm.Open("mysql", DB_CONNECT)
+	defer db.Close()
+
+	if err != nil {
+		log.Println(err)
+		fmt.Println("Can't Connect DB")
+		os.Exit(1)
+	}
+
 	for {
+		bookmarksIn := bookmark{}
 		BookmarkFeed, _ := fp.ParseURL(rssurl + "?of=" + strconv.Itoa(index))
 		index = index + perPage
 		items := BookmarkFeed.Items
@@ -27,23 +64,41 @@ func main() {
 			break
 		}
 		for _, item := range items {
-			fmt.Println("bookmarkId:" + strconv.Itoa(id))
-			fmt.Println("Title: " + item.Title)
-			fmt.Println("Link:" + item.Link)
-			categories := item.Categories
-			category_num := 0
-			for _, category := range categories {
-				fmt.Println()
-				fmt.Println("Category_id : " + strconv.Itoa(category_num))
-				fmt.Println("category : " + category)
-				category_num+
-			}
+
 
 			bookmarkDate := item.Extensions["dc"]["date"][0].Value
-			fmt.Println(bookmarkDate)
+			// RFC3339形式なのでdatetimeで扱える形式に変換する
+			t, _ := time.Parse(time.RFC3339, bookmarkDate)
 
-			break
+
+			bookmarksIn.ID = 0
+			bookmarksIn.Title = item.Title
+			bookmarksIn.Link = item.Link
+			bookmarksIn.Datetime = t.Format("2006-01-02 15:04:05")
+
+
+			db.Create(&bookmarksIn)
+
+			fmt.Println("bookmarkId:" + strconv.Itoa(int(bookmarksIn.ID)))
+			fmt.Println("Title: " + item.Title)
+			fmt.Println("Link:" + item.Link)
+			fmt.Println("date: " + t.Format("2006-01-02 15:04:05"))
+
+			categories := item.Categories
+			for _, category := range categories {
+				tagIn := tag{}
+				tagIn.Bookmark_Id = int(bookmarksIn.ID)
+				tagIn.Tag = category
+				tagIn.Tag_Id = 0
+				fmt.Println()
+				fmt.Println("bookmarkId : " +strconv.Itoa(int(bookmarksIn.ID)))
+				fmt.Println("Tag : " + category)
+				db.Create(&tagIn)
+				fmt.Println("tag unique" + strconv.Itoa(int(tagIn.ID)))
+
+			}
 		}
 	}
 
 }
+
