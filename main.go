@@ -32,12 +32,19 @@ type tag struct {
 const perPage = 20
 
 func main() {
-	//rss feed
-	rssurl := "http://b.hatena.ne.jp/ytacky/rss"
-	// indexは1から開始
-	index := 1
-	fp := gofeed.NewParser()
 	err := godotenv.Load()
+
+	if err != nil {
+		log.Println(err)
+		os.Exit(1)
+	}
+	rssurl := os.Getenv("RSS_URL")
+
+	// rssのstart indexは1
+	index := 1
+
+	// connect DB
+	fp := gofeed.NewParser()
 	DB_HOST := os.Getenv("DB_HOST")
 	DB_CHARSET := os.Getenv("DB_CHARSET")
 	DB_USER := os.Getenv("DB_USER")
@@ -57,15 +64,15 @@ func main() {
 	for {
 		bookmarksIn := bookmark{}
 		BookmarkFeed, _ := fp.ParseURL(rssurl + "?of=" + strconv.Itoa(index))
-		index = index + perPage
 		items := BookmarkFeed.Items
+
+		// rssが0件ならば終了
 		if len(items) == 0 {
 			fmt.Println("End Of purse")
-			break
+			os.Exit(0)
 		}
+
 		for _, item := range items {
-
-
 			bookmarkDate := item.Extensions["dc"]["date"][0].Value
 			// RFC3339形式なのでdatetimeで扱える形式に変換する
 			t, _ := time.Parse(time.RFC3339, bookmarkDate)
@@ -75,8 +82,6 @@ func main() {
 			bookmarksIn.Title = item.Title
 			bookmarksIn.Link = item.Link
 			bookmarksIn.Datetime = t.Format("2006-01-02 15:04:05")
-
-
 			db.Create(&bookmarksIn)
 
 			fmt.Println("bookmarkId:" + strconv.Itoa(int(bookmarksIn.ID)))
@@ -95,9 +100,12 @@ func main() {
 				fmt.Println("Tag : " + category)
 				db.Create(&tagIn)
 				fmt.Println("tag unique" + strconv.Itoa(int(tagIn.ID)))
-
 			}
 		}
+
+		// perPage分indexを進める
+		index = index + perPage
+
 	}
 
 }
